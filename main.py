@@ -1,44 +1,31 @@
-from flask import Flask, jsonify, request
-import os
-from dotenv import load_dotenv
-from openai import OpenAI
+import requests
+import time
+import hashlib
+import hmac
 
-# ✅ Load .env variables before using them
-load_dotenv()
-
-# ✅ Initialize OpenAI client with your API key
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ✅ Set up Flask
-app = Flask(__name__)
-
-@app.route("/")
-def root():
-    return jsonify({
-        "status": "Echo is online",
-        "mode": "universal agent",
-        "openai_key_loaded": bool(os.getenv("OPENAI_API_KEY"))
-    })
-
-@app.route("/ping")
-def ping():
-    return "pong"
-
-@app.route("/ask")
-def ask():
-    prompt = request.args.get("prompt", default="What's the best way to start my day?")
-    
+@app.route("/phemex/account", methods=["GET"])
+def phemex_account():
     try:
-        response = client.chat.completions.create(
-            model="gpt-4-1106-preview",
-            messages=[
-                {"role": "system", "content": "You are Echo, a helpful personal agent."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return jsonify({"response": response.choices[0].message.content})
+        # Load API credentials from environment variables
+        api_key = os.getenv("PHEMEX_API_KEY")
+        api_secret = os.getenv("PHEMEX_API_SECRET")
+
+        # Set up the API request
+        timestamp = str(int(time.time() * 1000))
+        endpoint = "/accounts/accountPositions"
+        signature_payload = f"{timestamp}GET{endpoint}".encode()
+        signature = hmac.new(api_secret.encode(), signature_payload, hashlib.sha256).hexdigest()
+
+        url = f"https://api.phemex.com{endpoint}"
+        headers = {
+            "x-phemex-access-token": api_key,
+            "x-phemex-request-signature": signature,
+            "x-phemex-request-expiry": timestamp,
+        }
+
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        return jsonify({"status": "success", "account_data": data})
     except Exception as e:
         return jsonify({"error": str(e)})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
